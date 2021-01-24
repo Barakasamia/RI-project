@@ -84,18 +84,30 @@ terms
 pmid <- search_funct(terms)
 title_list <- fetch_title(pmid)
 abstr_list <- fetch_abstract(pmid)
-docs <- TAL_funct(title_list)
+docs_title <- TAL_funct(title_list)
+docs_abstracts <- TAL_funct(abstr_list)
 
-#construir matrice term-doc
-dtm <- TermDocumentMatrix(docs)
+#construir matrice term-doc pour les titres
+dtm <- TermDocumentMatrix(docs_title)
 m <- as.matrix(dtm)
 v <- sort(rowSums(m),decreasing=TRUE)
 d <- data.frame(word = names(v),freq=v)
 head(d, 10)
 matrice_corr <- m %*% t(m)
 #Vocabulaire (liste des mots) : 
-dic <- data.frame(word = names(v))
-View(dic)
+dic_title <- data.frame(word = names(v))
+View(dic_title)
+
+#construir matrice term-doc pour résumés
+dtm2 <- TermDocumentMatrix(docs_abstracts)
+m2 <- as.matrix(dtm)
+v2 <- sort(rowSums(m),decreasing=TRUE)
+d2 <- data.frame(word = names(v),freq=v)
+head(d, 10)
+matrice_corr2 <- m2 %*% t(m2)
+#Vocabulaire (liste des mots) : 
+dic_abstract <- data.frame(word = names(v))
+View(dic_abstract)
 
 
 #Visualisation de la matrice term-doc  
