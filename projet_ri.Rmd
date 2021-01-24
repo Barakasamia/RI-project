@@ -37,9 +37,6 @@ terms
 pmid <- esearch(terms, "pubmed" , retmax = 100 , retstart = 0 , sort= "relevance",usehistory = TRUE )
 pmid
 
-summ <- esummary(pmid)
-summ
-
 # récuperer le contneue des id renvoyés 
 articles <- efetch(pmid , retmax = 100 , retstart = 0)
 
