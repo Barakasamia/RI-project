@@ -1,5 +1,5 @@
 ---
-title: "projer_ri"
+title: "projet_ri"
 author: "Baraka Samia"
 date: "24/01/2021"
 output: html_document
