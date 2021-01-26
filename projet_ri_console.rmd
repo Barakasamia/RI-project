@@ -1,0 +1,233 @@
+---
+title: "projet_ri"
+author: "Groupe 1 -filles"
+date: "27/01/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Installation des packages : 
+```{r}
+
+library("tm")
+library("SnowballC")
+library(wordcloud)
+library(RColorBrewer)
+library(reutils)
+```
+
+##Définition des fonctions : 
+
+```{r}
+search_funct <- function(terms) {
+  tryCatch(
+        {
+  # faire une recherche sur pubmed :        
+  pmid <- esearch(terms, "pubmed" , retmax = 100 , retstart = 0 , sort= "relevance")
+        },
+        error=function(cond) {
+            message(paste("term non trouvé :", terms))
+            message(cond)
+           
+        },
+        warning=function(cond) {
+            message(cond)
+        } ,finally={
+            message(paste("Recherche de term: ", terms))
+        }
+    )
+  return(pmid)
+}
+
+fetch_title <- function(pmid) {
+    # récuperer le contneue des id renvoyés 
+    articles <- efetch(pmid , retmax = 100 , retstart = 0)
+   
+     # récuper les valeurs des titres
+    titles <- articles$xmlValue("//ArticleTitle")
+    
+    #List pour les titres : 
+    title_list <- list(titles = c(titles))
+    
+    return(title_list)
+}
+
+fetch_abstract <- function(pmid) {
+  # récuperer le contneue des id renvoyés 
+  articles <- efetch(pmid , retmax = 100 , retstart = 0)
+  
+  # récuper les valeurs des résumés 
+  
+  abstracts <- articles$xmlValue("//AbstractText")
+  
+#List pour les résumés : 
+  abstract_list <- list(abstract= c(abstracts))
+  
+  return(abstract_list)
+}
+
+TAL_funct <- function(document) {
+# Charger les données comme un corpus
+    docs <- Corpus(VectorSource(document))
+    
+    #Transformation : 
+    toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+    docs <- tm_map(docs, toSpace, "/")
+    docs <- tm_map(docs, toSpace, "@")
+    docs <- tm_map(docs, toSpace, "\\|")
+    
+    # Convertir le texte en minuscule
+    docs <- tm_map(docs, content_transformer(tolower))
+    # Supprimer les nombres
+    docs <- tm_map(docs, removeNumbers)
+    # Supprimer les mots vides anglais
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    
+    # Supprimer les ponctuations
+    docs <- tm_map(docs, removePunctuation)
+    # Supprimer les espaces vides supplémentaires
+    docs <- tm_map(docs, stripWhitespace)
+    # Text stemming
+    docs <- tm_map(docs, stemDocument)
+     
+    return(docs)
+}
+```
+
+##Partie main du programme : 
+```{r}
+# Demander à l'utilisateur de tapez les terms de la requete ou la requete
+print("entrer vos termes/requete")
+terms <- scan(what = "")
+pmid <- search_funct(terms)
+pmid
+title_list <- fetch_title(pmid)
+abstr_list <- fetch_abstract(pmid)
+docs_title <- TAL_funct(title_list)
+docs_abstracts <- TAL_funct(abstr_list)
+
+```
+
+
+```{r}
+### /////// operations pour le corpus de titres : 
+
+#construir matrice term-doc pour les titres
+dtm <- TermDocumentMatrix(docs_title)
+m <- as.matrix(dtm)
+v <- rowSums(m)
+d <- data.frame(word = names(v),freq=v)
+
+#matrice de corrélation : 
+matrice_corr <- m %*% t(m)
+#Ajouter une colonne id à la matrice de corrélation pour les titres : 
+matrice_corr<- cbind(matrice_corr, "id"=1:nrow(matrice_corr)) 
+
+#Dictionnaire de titres :  
+dic_title <- data.frame(word = names(v))
+dic_title <- cbind(dic_title, "id"=1:nrow(dic_title)) 
+#view(dic_title)
+```
+
+
+```{r warning=false}
+### /////// operations pour le corpus de résumés : 
+
+#construir matrice term-doc pour résumés
+dtm2 <- TermDocumentMatrix(docs_abstracts)
+m2 <- as.matrix(dtm2)
+v2 <- rowSums(m2)
+d2 <- data.frame(word = names(v2),freq=v2)
+
+matrice_corr2 <- m2 %*% t(m2)
+
+#Ajouter une colonne id à la matrice de corrélation pour les résumés : 
+matrice_corr2 <- cbind(matrice_corr2, "id"=1:nrow(matrice_corr2))
+
+#Dictionnaire de résumés :  
+dic_abstract <- data.frame(word = names(v2),id=1:nrow(matrice_corr2))
+
+#Visualisation de la matrice term-doc pour les titres     
+findFreqTerms(dtm, lowfreq = 4)
+barplot(d[1:10,]$freq, las = 2, names.arg = d[1:10,]$word,
+        col ="lightblue", main ="Most frequent words",
+        ylab = "Word frequencies")
+#nuage des mots : 
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35,colors=brewer.pal(8, "Dark2"))
+
+```
+
+```{r}
+#Ajouter une colonne id à a matrice term-doc pour les titres : 
+dtm <- cbind(dtm, "id"=1:nrow(dtm))
+#Ajouter une colonne id à a matrice term-doc pour les résumés : 
+dtm2 <- cbind(dtm2, "id"=1:nrow(dtm2))
+```
+
+
+##Expansion de requetes - clustering local :
+
+```{r}
+terms <- list(term = terms)
+id <- list(identifiant=c())
+id_of_new_terms <-list()
+
+  ##Clustering local : 
+  j <- 1
+  for(j in 1:length(terms$term)) {
+    trouve <- FALSE
+    i<- 1
+    while (trouve == FALSE & i<= length(dic_title$word)) {
+      
+      if(dic_title$word[i] == terms$term[j]) {   
+        trouve <- TRUE
+        id$identifiant <- append(id$identifiant,dic_title[i,2])
+      }
+      if(dic_abstract$word[i] == terms$term[j]) {
+        trouve <- TRUE
+        id$identifiant <- append(id$identifiant,dic_abstract[i,2])
+      }
+      i <-i+1 
+    }
+  }
+    #a partir de la mtrice de correlation des titres : 
+    matrix_sorted <-matrice_corr[order(matrice_corr[,id$identifiant[1]],decreasing = TRUE),]
+    ncolumns1 <- ncol(matrix_sorted)
+    id_of_new_terms <- append(id_of_new_terms,c(matrix_sorted[2:4,ncolumns1]))
+    
+      taille <- length(id_of_new_terms)
+     for(z in 1:length(id_of_new_terms)) {
+        idd<- id_of_new_terms[[z]]
+        terms$term <- append(terms$term,dic_title$word[idd])
+        }
+    # a partir de la matrice de correlation des résumés : 
+    matrix_sorted2 <-matrice_corr2[order(matrice_corr2[,id$identifiant[1]],decreasing = TRUE),]
+    ncolumns2 <- ncol(matrix_sorted2)
+    id_of_new_terms <- append(id_of_new_terms, c(matrix_sorted2[2:4,ncolumns2]))
+    
+    #Ajout des neauveaux terme dans le data frame des terms intiaux : 
+     for(z in 1:taille) {
+        idd<- id_of_new_terms[[z]]
+        terms$term <- append(terms$term,dic_abstract$word[idd])
+        }
+    #relancer la recherche avec la nouvelle requete 
+    
+    pmid <- search_funct(terms$term)
+    pmid
+    title_list <- fetch_title(pmid)
+    abstr_list <- fetch_abstract(pmid)
+```
+#Résultats : 
+```{r}
+head(abstr_list$abstract,10)
+head(title_list$titles, 10)
+```
+
+
+
+

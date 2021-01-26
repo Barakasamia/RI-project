@@ -1,0 +1,312 @@
+---
+title: "Recherche sur PubMed"
+author: "Groupe 1 -filles"
+date: "27/01/2021"
+output: 
+  theme: rmdformats::material
+  html_document:
+    df_print: paged
+params:
+  termes: input:text 
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(reutils)
+library(tidyverse)
+library(rmdformats)
+```
+
+
+
+```{r echo=FALSE ,warning=FALSE, message=FALSE}
+##Définition des fonctions : 
+search_funct <- function(terms) {
+  tryCatch(
+        {
+  # faire une recherche sur pubmed :        
+  pmid <- esearch(terms, "pubmed" , retmax = 100 , retstart = 0 , sort= "relevance" )
+        },
+        error=function(cond) {
+            message(paste("terme non trouvé :", terms))
+            message(cond)
+           
+        },
+        warning=function(cond) {
+            message(cond)
+        } ,finally={
+            message(paste("\nRecherche pour: ", terms))
+        }
+    )
+  return(pmid)
+}
+
+fetch_title <- function(pmid) {
+    # récuperer le contneu des id renvoyés 
+    articles <- efetch(pmid , retmax = 100 , retstart = 0)
+   
+     # récuper les valeurs des titres
+    titles <- articles$xmlValue("//ArticleTitle")
+    
+    #Liste pour les titres : 
+    title_list <- list(titles = c(titles))
+    
+    return(title_list)
+}
+
+fetch_abstract <- function(pmid) {
+  # récuperer le contneu des id renvoyés 
+  articles <- efetch(pmid , retmax = 100 , retstart = 0)
+  
+  # récuper les valeurs des résumés 
+  
+  abstracts <- articles$xmlValue("//AbstractText")
+  
+#Liste pour les résumés : 
+  abstract_list <- list(abstract= c(abstracts))
+  
+  return(abstract_list)
+}
+
+fetch_id <- function(pmid) {
+  # récuperer le contneu des id renvoyés 
+  articles <- efetch(pmid , retmax = 100 , retstart = 0)
+  
+  # récuper les valeurs des IDs 
+  ids<-articles$xmlValue("//PMID")
+  
+  
+#Liste pour les IDs : 
+  ids_list <- list(id= c(ids))
+  
+  return(ids_list)
+}
+
+
+TAL_funct <- function(document) {
+# Charger les données comme un corpus
+    docs <- Corpus(VectorSource(document))
+    
+    #Transformation : 
+    toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+    docs <- tm_map(docs, toSpace, "/")
+    docs <- tm_map(docs, toSpace, "@")
+    docs <- tm_map(docs, toSpace, "\\|")
+    
+    # Convertir le texte en minuscules
+    docs <- tm_map(docs, content_transformer(tolower))
+    # Supprimer les nombres
+    docs <- tm_map(docs, removeNumbers)
+    # Supprimer les mots vides anglais
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    
+    # Supprimer les ponctuations
+    docs <- tm_map(docs, removePunctuation)
+    # Supprimer les espaces vides supplémentaires
+    docs <- tm_map(docs, stripWhitespace)
+    # Text stemming
+    docs <- tm_map(docs, stemDocument)
+     
+    return(docs)
+}
+```
+
+
+```{r echo=FALSE ,warning=FALSE, message=FALSE}
+##Partie main du programme : 
+# Arranger les termes saisis dans une liste
+terms<-params$termes
+test <- Corpus(VectorSource(terms))
+test<-tm_map(test, stripWhitespace)
+test1 <- TermDocumentMatrix(test)
+test2 <- as.matrix(test1)
+test3<-dimnames(test2)$Terms
+terms<-test3
+terms<- as.list(test3)
+#recherche
+pmid <- search_funct(terms)
+title_list <- fetch_title(pmid)
+abstr_list <- fetch_abstract(pmid)
+docs_title <- TAL_funct(title_list)
+docs_abstracts <- TAL_funct(abstr_list)
+
+```
+
+
+```{r echo=FALSE ,warning=FALSE, message=FALSE}
+### /////// operations pour le corpus de titres : 
+
+#construire une matrice term-doc pour les titres
+dtm <- TermDocumentMatrix(docs_title)
+m <- as.matrix(dtm)
+v <- rowSums(m)
+d <- data.frame(word = names(v),freq=v)
+
+#matrice de corrélation : 
+matrice_corr <- m %*% t(m)
+#Ajouter une colonne id à la matrice de corrélation pour les titres : 
+matrice_corr<- cbind(matrice_corr, "id"=1:nrow(matrice_corr)) 
+
+#Dictionnaire de titres :  
+dic_title <- data.frame(word = names(v))
+dic_title <- cbind(dic_title, "id"=1:nrow(dic_title)) 
+```
+
+
+```{r echo=FALSE ,warning=FALSE, message=FALSE}
+### /////// operations pour le corpus des résumés : 
+
+#construire une matrice term-doc pour les résumés
+dtm2 <- TermDocumentMatrix(docs_abstracts)
+m2 <- as.matrix(dtm2)
+v2 <- rowSums(m2)
+d2 <- data.frame(word = names(v2),freq=v2)
+
+matrice_corr2 <- m2 %*% t(m2)
+
+#Ajouter une colonne id à la matrice de corrélation pour les résumés : 
+matrice_corr2 <- cbind(matrice_corr2, "id"=1:nrow(matrice_corr2))
+
+#Dictionnaire de résumés :  
+dic_abstract <- data.frame(word = names(v2),id=1:nrow(matrice_corr2))
+```
+
+# Articles pertinents
+```{r echo=FALSE ,warning=FALSE, message=FALSE}
+#Ajouter une colonne id à la matrice term-doc pour les titres : 
+dtm <- cbind(dtm, "id"=1:nrow(dtm))
+#Ajouter une colonne id à la matrice term-doc pour les résumés : 
+dtm2 <- cbind(dtm2, "id"=1:nrow(dtm2))
+```
+
+
+```{r echo=FALSE ,warning=FALSE, message=FALSE}
+##Expansion de requêtes - clustering local :
+
+id <- list(identifiant=c())
+id_of_new_terms <-list()
+
+  ##Clustering local : 
+  j <- 1
+  for(j in 1:length(terms)) {
+    trouve <- FALSE
+    i<- 1
+    while (trouve == FALSE & i<= length(dic_title$word)) {
+      
+      if(dic_title$word[i] == terms[[j]][1]) {   
+        trouve <- TRUE
+        id$identifiant <- append(id$identifiant,dic_title[i,2])
+      }
+      if(dic_abstract$word[i] == terms[[j]][1]) {
+        trouve <- TRUE
+        id$identifiant <- append(id$identifiant,dic_abstract[i,2])
+      }
+      i <-i+1 
+    }
+  }
+    #à partir de la matrice de correlation des titres : 
+    matrix_sorted <-matrice_corr[order(matrice_corr[,id$identifiant[1]],decreasing = TRUE),]
+    
+    ncolumns1 <- ncol(matrix_sorted)
+    id_of_new_terms <- append(id_of_new_terms,c(matrix_sorted[2:4,ncolumns1]))
+    
+      taille <- length(id_of_new_terms)
+     for(z in 1:length(id_of_new_terms)) {
+        idd<- id_of_new_terms[[z]][1]
+        terms <- append(terms,dic_title$word[idd])
+        }
+    # à partir de la matrice de correlation des résumés : 
+    matrix_sorted2 <-matrice_corr2[order(matrice_corr2[,id$identifiant[1]],decreasing = TRUE),]
+    ncolumns2 <- ncol(matrix_sorted2)
+    id_of_new_terms <- append(id_of_new_terms, c(matrix_sorted2[2:4,ncolumns2]))
+    
+    #Ajout des neauveaux termes dans le data frame des termes intiaux : 
+     for(z in 1:taille) {
+        idd<- id_of_new_terms[[z]][1]
+        terms <- append(terms,dic_abstract$word[idd])
+        }
+    #relancer la recherche avec la nouvelle requête 
+    
+    pmid <- search_funct(terms)
+    title_list <- fetch_title(pmid)
+    abstr_list <- fetch_abstract(pmid)
+    ids_list<- fetch_id(pmid)
+```
+
+## `r as.character(title_list[["titles"]][1]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][1])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][1],col.names = "")
+```
+
+## `r as.character(title_list[["titles"]][2]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][2])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][2],col.names = "")
+```
+
+## `r as.character(title_list[["titles"]][3]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][3])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][3],col.names = "")
+```
+
+## `r as.character(title_list[["titles"]][4]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][4])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][4],col.names = "")
+```
+
+## `r as.character(title_list[["titles"]][5]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][5])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][5],col.names = "")
+```
+## `r as.character(title_list[["titles"]][6]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][6])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][6],col.names = "")
+```
+## `r as.character(title_list[["titles"]][7]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][7])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][7],col.names = "")
+```
+## `r as.character(title_list[["titles"]][8]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][8])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][8],col.names = "")
+```
+## `r as.character(title_list[["titles"]][9]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][9])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][9],col.names = "")
+```
+## `r as.character(title_list[["titles"]][10]) `
+<https://pubmed.ncbi.nlm.nih.gov/`r as.character(ids_list[["id"]][10])`/>
+```{r echo=FALSE}
+knitr::kable(abstr_list[["abstract"]][10],col.names = "")
+```
+
+# Affiner la recherche
+
+Vous pouvez affiner votre recherche en tapant ces mots dans la recherche:
+```{r echo=FALSE ,warning=FALSE, message=FALSE}
+#affichage des mots les plus fréquents qui cococcurent avec les mots saisis
+knitr::kable(as.character(terms),col.names = NULL)
+#nuage des mots : 
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35,colors=brewer.pal(8, "Dark2"))
+
+```
+
