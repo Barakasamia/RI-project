@@ -210,7 +210,7 @@ id_of_new_terms <-list()
     ncolumns2 <- ncol(matrix_sorted2)
     id_of_new_terms <- append(id_of_new_terms, c(matrix_sorted2[2:4,ncolumns2]))
     
-    #Ajout des neauveaux terme dans le data frame des terms intiaux : 
+    #Ajout des neauveaux terme dans le data frame des terms intiaux: 
      for(z in 1:taille) {
         idd<- id_of_new_terms[[z]]
         terms$term <- append(terms$term,dic_abstract$word[idd])
